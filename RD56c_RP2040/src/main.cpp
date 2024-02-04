@@ -1,3 +1,12 @@
+/ =========================================================================================================================================
+//                                                 Rotating Color Display RD56c
+//                                                    © Ludwin Monz
+// License: Creative Commons Attribution - Non-Commercial - Share Alike (CC BY-NC-SA)
+// you may use, adapt, share. If you share, "share alike".
+// you may not use this software for commercial purposes 
+// =========================================================================================================================================
+
+
 #include <Arduino.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
