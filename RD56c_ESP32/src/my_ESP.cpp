@@ -90,7 +90,7 @@ void my_ESP::_iniWifi() {
     IPAddress subnet(255,255,255,0);        //
     WiFi.softAPConfig(apIP, apIP, subnet);  //
 
-    ssid = "RD40";
+    ssid = "RD56c";
     WiFi.softAP(ssid);                      //
 
     ipAddress = WiFi.softAPIP().toString();
