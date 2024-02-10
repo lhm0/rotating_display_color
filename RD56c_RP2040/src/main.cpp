@@ -1,4 +1,4 @@
-/ =========================================================================================================================================
+// =========================================================================================================================================
 //                                                 Rotating Color Display RD56c
 //                                                    © Ludwin Monz
 // License: Creative Commons Attribution - Non-Commercial - Share Alike (CC BY-NC-SA)
@@ -171,7 +171,7 @@ void setup() {
 //
 // ====================================================================================================================
 
-	spi_init(spi0,30*1000*1000);										// initialize SPI0, set baudrate to 25 MHz (maximum of STP24DP05)
+	spi_init(spi0,25*1000*1000);										// initialize SPI0, set baudrate to 25 MHz (maximum of STP24DP05)
 	spi_set_slave(spi0, false);											// initialize SPI0 as master
 	spi_set_format(spi0, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);		// 8 data bits, data latched on first clock transition, clock active high
 
