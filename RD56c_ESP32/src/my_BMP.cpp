@@ -62,10 +62,10 @@ void my_BMP::_generateIP() {
 
     _clr_bmp();
     
-    _initImageParameters(_bmpIP, "/gear.rdc");
+    _initImageParameters(_bmpIP, "/images/gear.rdc");
 
     // load rd40 image data
-    FlashFS rd40_f("/gear.rdc");
+    FlashFS rd40_f("/images/gear.rdc");
     rd40_f.read_f(bitmap, 0, 0, _bmpIP.frameNumber);
 
     token = strtok(_ipAddress, ".");
