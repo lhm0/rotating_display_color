@@ -108,10 +108,10 @@ void my_BMP::_generateAnalog() {
   
     _loadWatchFace();
 
-    _drawCircle(38, 7, 3, 0);
-    _drawCircle(39, 7, 3, 0);
-    for (int n=0; n<240; n=n+20) _drawRadius(n, 32, 39, 7, 3, 0);
-    for (int n=0; n<240; n=n+4) _drawRadius(n, 35, 39, 7, 3, 0);
+    _drawCircle(55, 7, 3, 0);
+    _drawCircle(56, 7, 3, 0);
+    for (int n=0; n<240; n=n+20) _drawRadius(n, 47, 54, 7, 3, 0);
+    for (int n=0; n<240; n=n+4) _drawRadius(n, 50, 54, 7, 3, 0);
     char text[10]="12";
     _print_10x15(1, text, 55, 85, 7, 0, 0);
     strcpy(text,"6");
@@ -126,15 +126,15 @@ void my_BMP::_generateAnalog() {
     if (_myHour>12) hour12=_myHour-12;
     else hour12=_myHour;
     int n = (int)((hour12*60+_myMin)/3);
-    _drawRadius(n, 0, 20, 0, 7, 0);
+    _drawRadius(n, 0, 35, 7, 0, 0);
 
   // minute hand
     n = (int)((_myMin*60+_mySec)/15);
-    _drawRadius(n, 0, 35, 0, 7, 0);
+    _drawRadius(n, 0, 50, 7, 0, 0);
 
   // second hand
     n = _mySec*4;
-    _drawRadius(n, 0, 40, 7, 7, 7);
+    _drawRadius(n, 0, 55, 7, 7, 7);
 }
 
 void my_BMP::_loadWatchFace() {
@@ -431,12 +431,12 @@ void my_BMP::_drawRadius(int n, int rStart, int rEnd, int r, int g, int b) {
 
 int my_BMP::_polarToX(int n, int r) {
   float theta = 0.026179939*(n+0.5);                // 2*pi/240 = 0.026179939
-  return (int)roundf(54.5+(r+15.5)*sin(theta));
+  return (int)roundf(54.5+r*sin(theta));
 }
 
 int my_BMP::_polarToY(int n, int r) {
   float theta = 0.026179939*(n+0.5);                // 2*pi/240 = 0.026179939
-  return (int)roundf(54.5+(r+15.5)*cos(theta));
+  return (int)roundf(54.5+r*cos(theta));
 }
 
 

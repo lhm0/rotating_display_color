@@ -115,7 +115,7 @@ void webInterface::_startServer() {
   });
 
   _server.on("/getParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    StaticJsonDocument<100> doc;
+    JsonDocument doc;
     doc["mode"] = clockMode;
     doc["brightness"] = brightness;
 
@@ -178,7 +178,7 @@ void webInterface::_startServer() {
   });
 
   _server.on("/getWeatherParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    StaticJsonDocument<200> doc;
+    JsonDocument doc;
     doc["apiKey"] = _apiKey_f.read_f();
     doc["location"] = _location_f.read_f();
     doc["country"] = _country_f.read_f();
@@ -192,7 +192,7 @@ void webInterface::_startServer() {
   });
 
     _server.on("/getWeather", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    StaticJsonDocument<200> doc;
+    JsonDocument doc;
     doc["w_icon"] = _w_icon;
     doc["w_temp"] = _w_temp;
     doc["w_humi"] = _w_humi;
@@ -262,7 +262,7 @@ void webInterface::_startServer() {
   });
 
   _server.on("/getWifiParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    StaticJsonDocument<200> doc;
+    JsonDocument doc;
     doc["ssid"] = _ssid_f.read_f();
     doc["password"] = _password_f.read_f();
 
@@ -321,7 +321,7 @@ void webInterface::_startServer() {
     Serial.println(fileName);
 
     String fileName_s = fileName;
-    if (!fileName_s.isEmpty() && fileName_s[fileName_s.length() - 1] == '/') {
+    if (fileName_s.length()!=0 && fileName_s[fileName_s.length() - 1] == '/') {
       fileName_s = fileName_s.substring(0, fileName_s.length() - 1);
     }
 
@@ -340,23 +340,19 @@ void webInterface::_startServer() {
   _server.on("/renamefile", HTTP_GET, [this](AsyncWebServerRequest *request) { /// ///
     String oldFileName = request->getParam("oldfilename")->value();
     String newFileName = request->getParam("newfilename")->value();
-    if (!oldFileName.isEmpty() && oldFileName[oldFileName.length() - 1] == '/') {
+    if (!oldFileName.length()!=0 && oldFileName[oldFileName.length() - 1] == '/') {
       oldFileName = oldFileName.substring(0, oldFileName.length() - 1);
     }
-    if (!newFileName.isEmpty() && newFileName[newFileName.length() - 1] == '/') {
+    if (!newFileName.length()!=0 && newFileName[newFileName.length() - 1] == '/') {
       newFileName = newFileName.substring(0, newFileName.length() - 1);
     }
 
-    // Check if newFileName already exists
-    FlashFS* flashFsCheck = new FlashFS(newFileName);
-    if (!(flashFsCheck->exists())) {
-      delete flashFsCheck;
+    if (SD.exists(newFileName.c_str())) {
       // File with newFileName already exists, send an error response
       Serial.println("File with the new name already exists.");
       request->send(400, "text/plain", "File with the new name already exists.");
       return;
     }
-    delete flashFsCheck;
 
     Serial.print("rename file: ");
     Serial.print(oldFileName);
@@ -392,12 +388,16 @@ void webInterface::_startServer() {
         lastFolder = sourcePath.substring(secondLastSlashIndex + 1, sourcePath.length()-1);
       }
       destPath += lastFolder;
+      destPath += "/";
+
       sourcePath = sourcePath.substring(0, sourcePath.length()-1);
     }
     else {
       sourcePath = sourcePath.substring(0, sourcePath.length());
     }
-    destPath = destPath.substring(0, destPath.length());
+    destPath = destPath.substring(0, destPath.length()-1);
+
+    Serial.println("/copyfile from "+sourcePath+" to "+destPath);
 
     FlashFS* flashFs = new FlashFS(sourcePath);
     flashFs -> copy_f(destPath);
@@ -418,7 +418,7 @@ void webInterface::_startServer() {
 
   _server.on("/mkdir", HTTP_GET, [this](AsyncWebServerRequest *request) { /// ///
     String newDir = request->getParam("filename")->value();
-    if (!newDir.isEmpty() && newDir[newDir.length() - 1] == '/') {
+    if (newDir.length()!=0 && newDir[newDir.length() - 1] == '/') {
       newDir = newDir.substring(0, newDir.length() - 1);
     }
     FlashFS* flashFs = new FlashFS(newDir);
@@ -546,7 +546,7 @@ void webInterface::_startServer() {
   });
 
   _server.on("/getRDCNames", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    StaticJsonDocument<200> doc;
+    JsonDocument doc;
     doc["clockface"] = _clockFacePath_f.read_f();
     doc["logo"] = _logoPath_f.read_f();
     doc["image"] = _imagePath_f.read_f();
@@ -601,7 +601,7 @@ void webInterface::_startServer() {
     Serial.println(part);
 
     // Create a JSON document
-    StaticJsonDocument<2048> doc;
+    JsonDocument doc;
 
     // Create an array in the JSON document
     JsonArray timeZoneArray = doc.to<JsonArray>();
@@ -628,7 +628,8 @@ void webInterface::_startServer() {
       strcat(entry, timeDifference);
       strcat(entry, ")");
 
-    JsonObject timeZoneObj = timeZoneArray.createNestedObject();
+    //JsonObject timeZoneObj = timeZoneArray.createNestedObject();
+    JsonObject timeZoneObj = timeZoneArray.add<JsonObject>();
       timeZoneObj["entry"] = entry;
     }
     // Serialize the JSON document to a string

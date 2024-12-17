@@ -67,7 +67,7 @@ bool FlashFS::begin() {
 String FlashFS::read_f() {
   File file = SD.open(_path.c_str(), "r", false);
   if (!file) {
-    Serial.println("Failed to open file for reading");
+    Serial.println(_path + "Failed to open file for reading");
     return "";
   }
   String text = file.readString();
@@ -128,21 +128,24 @@ bool FlashFS::read_f(uint8_t (*bitmap)[165], int x, int y, int frame) {
 
 // Routine zum Schreiben einer Datei
 void FlashFS::write_f(String text) {
+  if (SD.exists(_path.c_str())) SD.remove(_path);   // replace existing file with new one
+
 
   File file = SD.open(_path.c_str(), FILE_WRITE);
 
   if (!file) {
-    Serial.println("Failed to open file for writing");
+    Serial.println(_path + "Failed to open file for writing");
     return;
   }
   file.print(text);
+  file.flush();
   file.close();
 }
 
 void FlashFS::write_f(uint8_t* data, size_t len) {
   File file = SD.open(_path.c_str(), FILE_WRITE);
   if (!file) {
-    Serial.println("Failed to open file for writing");
+    Serial.println(_path + "Failed to open file for writing");
     return;
   }
   file.write(data, len);
@@ -168,17 +171,65 @@ bool FlashFS::close_f() {
   return false; // file not open
 }
 
+/////////////////////////////////////////////////////////
+// the following functions manipulate files and directories.
+// path formate:
+// - folders end with "/"
+// - the root folder is "/"
+// - files have an extension ".xxx"
+// 
+// examples
+// /variables/ssid.txt
+// /variables/
+// 
+// in order to use the functions, a source object needs to be created:
+// FlashFS mysource{"/variables/ssid.txt"}
+// then, the function with its target path needs to be called:
+// mysource.rename_f("/variables/new_ssid.txt")
+// mysource.move_f("/ssid.txt")
+// mysource.copy_f("/ssid.txt")
+//
+// This syntax also works for folders:
+// FlashFS mysource{"/variables/test/"}
+// mysource.rename_f("/variables/new_test/")
+// mysource.move_f("/test/")
+// mysource.copy_f("/test/")
+/////////////////////////////////////////////////////////
+
+bool FlashFS::_isDirectory() {
+  return _path.indexOf('.') == -1;
+}
+
+bool FlashFS::_mkdir(String path) {
+  Serial.println("_mkdir - path: " + path);
+
+  if (path=="/") return true;
+  if (path.endsWith("/")) {                   // check if path ends with "/"
+    path.remove(path.length()-1);             // remove the last character
+  }
+  if (!SD.exists(path.c_str())) {             // check if directory already exists
+    bool success = SD.mkdir(path.c_str());    // make directory, if it does not exist, yet
+      if (!success) {
+        Serial.println(path + ": Failed to create directory");
+      }
+    return success;
+  } else {
+    return true;
+  }
+}
+
+
 String FlashFS::listFilesInJson() {
-  DynamicJsonDocument doc(2048);
+  JsonDocument doc;
   JsonArray array = doc.to<JsonArray>();
 
   File root = SD.open(_path.c_str());
   if(!root){
-    Serial.println("Failed to open directory");
-    return "";
+    Serial.println(_path+": Error opening directory");
+return "";
   }
   if(!root.isDirectory()){
-    Serial.println("Not a directory");
+    Serial.println(_path+": Not a directory");
     return "";
   }
 
@@ -198,13 +249,12 @@ String FlashFS::listFilesInJson() {
 }
 
 bool FlashFS::rename_f(String newPath) {
+  Serial.println("rename_f - _path: " + _path);
+  Serial.println("rename_f - newPath: " + newPath);
+
   bool success; 
   
-  if (_isDirectory()) {                                                       //// !!!! ////
-   success = SD.rename(_path.c_str(), newPath.c_str());
-  } else {
     success = SD.rename(_path.c_str(), newPath.c_str());
-  }
   
   if (success) {
     _path = newPath;
@@ -213,6 +263,8 @@ bool FlashFS::rename_f(String newPath) {
 }
 
 bool FlashFS::delete_f() {
+  Serial.println("delete_f - _path: " + _path);
+
   if (_isDirectory()) {
     // remove all files and subdirectories recursively, before deleting the directory
     File root = SD.open(_path.c_str());
@@ -224,6 +276,7 @@ bool FlashFS::delete_f() {
     while(file){
       String fileName = file.name();
       String filePath = _path + "/" + fileName;
+      Serial.println("next file to delete, filePath: "+filePath);
       if (file.isDirectory()) {
         // delete subdirectory
         FlashFS* subDir = new FlashFS(filePath);
@@ -245,6 +298,9 @@ bool FlashFS::delete_f() {
 }
 
 bool FlashFS::copy_f(String destPath) {
+  Serial.println("copy_f - _path: " + _path);
+  Serial.println("copy_f - destPath: " + destPath);
+
   String sourcePath = _path;
   if (_isDirectory()) {
     // create destination directory if it doesn't exist
@@ -254,30 +310,34 @@ bool FlashFS::copy_f(String destPath) {
     File file = root.openNextFile();
     while(file) {
       String sourceFileName = file.name();
-      String sourceFilePath = sourcePath + "/" + sourceFileName;
+      if (!sourceFileName.startsWith(".")) {   //ignore hidden files and folders   
+        String sourceFilePath = sourcePath + "/" + sourceFileName;
+        Serial.println ("next file to copy, sourceFilePath: "+sourceFilePath);
 
-      if (file.isDirectory()) {
-        String subDirDestPath = destPath + "/" + sourceFileName;
-        FlashFS* subDir = new FlashFS(sourceFilePath);
-        subDir -> copy_f(subDirDestPath);
-        delete subDir;
-      } else {
-        String destFilePath = destPath + "/" + sourceFileName;
-        File* srcFile = new File(SD.open(sourceFilePath.c_str(), "r"));
-        File* destFile = new File(SD.open(destFilePath.c_str(), "w"));
-        if (!srcFile || !destFile) {
-          return false; // copy failed
-        }
-        while (srcFile->available()) {
-          destFile->write(srcFile->read());
+        if (file.isDirectory()) {
+          String subDirDestPath = destPath + "/" + sourceFileName;
+          FlashFS* subDir = new FlashFS(sourceFilePath);
+         subDir -> copy_f(subDirDestPath);
+          delete subDir;
+        } else {
+          String destFilePath = destPath + "/" + sourceFileName;
+          Serial.println("next file to copy, destFilePath: "+destFilePath);
+          File* srcFile = new File(SD.open(sourceFilePath.c_str(), "r"));
+          File* destFile = new File(SD.open(destFilePath.c_str(), "w"));
+          if (!srcFile || !destFile) {
+            return false; // copy failed
+         }
+          while (srcFile->available()) {
+            destFile->write(srcFile->read());
+          }
           destFile->flush();
-        }
-        srcFile->close();
-        destFile->close();
-        delete srcFile;
-        delete destFile;
-      }
 
+          srcFile->close();
+          destFile->close();
+          delete srcFile;
+          delete destFile;
+        }
+      }
       file = root.openNextFile();    
     }
     return true;
@@ -291,25 +351,37 @@ bool FlashFS::copy_f(String destPath) {
     }
     destPath = destPath + "/" + fileName;
 
+    Serial.println("copy_f: sourcePath = "+sourcePath+" destPath = "+destPath);
+
+
     // copy file to destination
-    File* srcFile = new File(SD.open(sourcePath.c_str(), "r"));
-    File* destFile = new File(SD.open(destPath.c_str(), "w"));
-    if (!srcFile || !destFile) {
-      return false; // copy failed
+    if (!SD.exists(destPath)) {
+      File srcFile = SD.open(sourcePath.c_str(), "r");
+      File destFile = SD.open(destPath.c_str(), "w");
+      if (!srcFile || !destFile) {
+        Serial.println("error opening the file.");
+
+        return false; // copy failed
+      }
+      size_t n;  
+      uint8_t buf[64];
+      while ((n = srcFile.read(buf, sizeof(buf))) > 0) {
+        destFile.write(buf, n);
+      }
+      srcFile.close();
+      destFile.close();
     }
-    while (srcFile->available()) {
-      destFile->write(srcFile->read());
-      destFile->flush();
+    else {
+      Serial.println("copy_f: \"" + destPath + "\" already exists");
     }
-    srcFile->close();
-    destFile->close();
-    delete srcFile;
-    delete destFile;
     return true;
   }
 }
 
 bool FlashFS::move_f(String destPath) {
+  Serial.println("move_f - _path: " + _path);
+  Serial.println("move_f - destPath: " + destPath);
+
   if (copy_f(destPath)) {
     delete_f();
     _path = destPath;
@@ -319,24 +391,6 @@ bool FlashFS::move_f(String destPath) {
   }
 }
 
-bool FlashFS::_isDirectory() {
-    return _path.indexOf('.') == -1;
-}
-
-bool FlashFS::_mkdir(String path) {
-  if (path.endsWith("/")) {                   // check if path ends with "/"
-    path.remove(path.length()-1);             // remove the last character
-  }
-  if (!SD.exists(path.c_str())) {             // check if directory already exists
-    bool success = SD.mkdir(path.c_str());    // make directory, if it does not exist, yet
-      if (!success) {
-        Serial.println("Failed to create directory");
-      }
-    return success;
-  } else {
-    return true;
-  }
-}
 
 bool FlashFS::exists() {
   Serial.println("exists(): "+_path);
@@ -385,6 +439,7 @@ bool FlashFS::copyFirstImage(String destFileName) {
       
   file.close();
 
+  SD.remove(destFileName.c_str());  
   File destFile = SD.open(destFileName.c_str(), FILE_WRITE);
   if (!destFile) {
     Serial.println("Failed to open destFile for writing");
