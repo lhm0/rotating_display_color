@@ -1,5 +1,5 @@
 // =========================================================================================================================================
-//                                                 Rotating Display RD40
+//                                                 Rotating Display RD56c
 //                                                    © Ludwin Monz
 // License: Creative Commons Attribution - Non-Commercial - Share Alike (CC BY-NC-SA)
 // you may use, adapt, share. If you share, "share alike".
@@ -17,6 +17,8 @@
 #include "FlashFS.h"
 #include "webInterface.h"
 
+#include <WiFi.h>
+#include <time.h>
 
 // =========================================================================================================================================
 // 
@@ -62,12 +64,13 @@
 
 
 my_ESP myESP;                                                // create instance of my_ESP
-webInterface wi40;                                           // create instance of webInterface
+webInterface wi56;                                           // create instance of webInterface
 RD_40 RD40;                                                  // create instance of RD_40
 my_BMP myBMP;                                                // create instance of my_BMP
 
 long lastWeather;                                            // remember time of last weather updte
 int lastUpdate=0;                                            // remember the second of last display update
+int prevSec=0;
 int prevClockMode=4;                                         // remember previous clockMode
 
 int right = 0;
@@ -83,7 +86,7 @@ void setup(){
   myESP.begin();                            // initiates Wifi, time
   String myssid = myESP.ssid;               // withdraw SSID
   String myIpAddress = myESP.ipAddress;
-  wi40.begin(myssid);                       // start web server
+  wi56.begin(myssid);                       // start web server
 
   myESP.getMyTime();
   Serial.printf("Zeit: %d:%d:%d\n", myESP.Hour, myESP.Min, myESP.Sec);
@@ -96,37 +99,35 @@ void loop() {
 // 
 //
 
-  if ( (((millis()-lastWeather)>60000)&&(wi40.clockMode==4)) || wi40.updateWeather) {     // update weather every 60 seconds OR if update requested with update_weather
+  if ( (((millis()-lastWeather)>60000)&&(wi56.clockMode==4)) || wi56.updateWeather) {     // update weather every 60 seconds OR if update requested with update_weather
     lastWeather=millis();
     Serial.println("request weather data.....");
-    myBMP.getWeather(wi40.apiKey, wi40.location);
-    wi40.updateWI(myBMP.w_icon, myBMP.w_temp, myBMP.w_humi);                               //send data via WebSocket to webpage
+    myBMP.getWeather(wi56.apiKey, wi56.location);
+    wi56.updateWI(myBMP.w_icon, myBMP.w_temp, myBMP.w_humi);                               //send data via WebSocket to webpage
 
-    wi40.updateWeather=false;
+    wi56.updateWeather=false;
   }
 
   myESP.getMyTime();
+  if (myESP.Sec!=prevSec) {
+    prevSec = myESP.Sec;
+    Serial.printf("%d:%d:%d   %d.%d.%d\n", myESP.Hour, myESP.Min, myESP.Sec, myESP.Mday, myESP.Mon, myESP.Year );
+  }
 
-    lastUpdate=myESP.Sec;
-//    Serial.printf("time: %d:%d:%d ::%d\n",myESP.Hour,myESP.Min,myESP.Sec);
-      
-    if (wi40.clockMode!=prevClockMode) {
-      prevClockMode=wi40.clockMode;
-    }
+long stamp = millis();                                           // current time
+  if ((stamp-lastUpdate)>100) {
+    lastUpdate = stamp;
+    tm* mytm = &myESP.tm1; 
 
-    int myMode = wi40.clockMode;                                      // wi40 holds clockMode setting of user interface
-    tm* mytm = &myESP.tm1;                                            // myESP holds time
-    String myssid = myESP.ssid;                                       // withdraw SSID
-    String myIpAddress = myESP.ipAddress;     
-
-
-    myBMP.generateBMP(myMode, mytm, myssid.c_str(), myIpAddress.c_str());  // generate bitmap
+    myBMP.generateBMP(wi56.clockMode, mytm, myESP.ssid.c_str(), myESP.ipAddress.c_str());  // generate bitmap
 
     unsigned char (*mybitmap)[165] = myBMP.bitmap;                     // pointer at bitmap array
+
     RD40.displayBMP(mybitmap);                                        // update display data according to bitmap
 
-    int mybrightness = wi40.brightness;                               // wi40 holds the brightness setting of user interface
-
+    int mybrightness = wi56.brightness;                               // wi56 holds the brightness setting of user interface
     RD40.upload(mybrightness);                                          // 
-    
   }
+
+  wi56.update();
+}

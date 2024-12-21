@@ -1,5 +1,5 @@
 // =========================================================================================================================================
-//                                                 Rotating Display RD40
+//                                                 Rotating Display RD56c
 //                                                    © Ludwin Monz
 // License: Creative Commons Attribution - Non-Commercial - Share Alike (CC BY-NC-SA)
 // you may use, adapt, share. If you share, "share alike".
@@ -12,8 +12,8 @@
 //
 //          This class provides the user interface for controlling the rotating display
 //
-//          The initialization method "webInterface::begin(my_ESP* myESP) uses the AsyncWebServer object "server" from myESP.
-//          The web pages are stored in the SPIFFS ny means of LittleFS. 
+//          The initialization method "webInterface::begin(my_ESP* myESP) uses the WebServer object "server" from myESP.
+//          The web pages are stored on the SD card. 
 //
 // ******************************************************************************************************************************************
 
@@ -22,17 +22,21 @@
 #define webInterface_H
 
 #include <Arduino.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
+#include <WiFi.h>
+#include <WebServer.h>
 
 #include "my_ESP.h"
 #include "FlashFS.h"
 
+extern my_ESP myESP;
+
 class webInterface {
   private:
-    AsyncWebServer _server{80};                 // server object
-    AsyncWebSocket _ws{"/ws"};                  // ws object
+    WebServer _server{80};                 // server object
+    void _serveFile(const char* filePath, const char* mimeType);   // helper Funktion to send file 
 
+    static FlashFS _dummy;
     FlashFS _apiKey_f{"/variables/apiKey.txt"};
     FlashFS _location_f{"/variables/location.txt"};
     FlashFS _country_f{"/variables/country.txt"};
@@ -57,16 +61,14 @@ class webInterface {
     static webInterface* _instance;
 
     void _startServer();
-    static void _handleUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
-    static void _handleAppend(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
-    void _handleWebSocketMessage(void *arg, uint8_t *data, size_t len);
-    void _onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
-
+    void _handleFileUpload();
+    File _UploadFile;
 
   public:
     webInterface();                                             // constructor
 
     void begin(String ssid_);                                  // starts the web server
+    void update();
     int clockMode=0;
     int brightness=50;
     bool pauseImageUpdate = false;

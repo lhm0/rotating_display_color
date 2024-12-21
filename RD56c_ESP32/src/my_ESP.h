@@ -22,8 +22,6 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
 
 #include "FlashFS.h"
 
@@ -47,8 +45,6 @@ class my_ESP {
     void begin();                          // initiate Wifi
                                            // configure I2C
                                            // set time
-
-    AsyncWebServer server{80};             // AsyncWebServer: Server object is public
 
     String ipAddress;
     String ssid;

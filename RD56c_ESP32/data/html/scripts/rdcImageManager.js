@@ -1,8 +1,6 @@
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//
-//                                Handling of the File select box
-//
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//               load and display file list
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 let currentPath = "/"; // current directory path
 let fileList = document.getElementById("file-list"); // file list DOM element
@@ -10,6 +8,111 @@ let fileItems = []; // list of file item DOM elements
 let selectedFile = ""; // name of the selected file/folder
 let selectedFilePath = ""; // path of the selected file/folder
 
+// Event listener for when the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Document loaded.');
+  document.getElementById('option1').checked = true;
+  loadFileList();
+  getRDCNames();
+});
+
+// Load the file list and disk space information
+function loadFileList() {
+  console.log('Loading file list...');
+
+  // Clear previous file list before adding new elements
+  fileList.innerHTML = ''; 
+
+  // Fetch the file list from the server
+  fetchFileList()
+      .then(fileListData => {
+          // If the current path is not the root directory, add ".." at the beginning
+          if (currentPath !== "/") {
+              addParentDirectory();  // Add ".." to navigate to parent directory
+          }
+
+          // Display the sorted file list
+          displayFileList(fileListData);
+      })
+      .catch(error => console.error('Error loading file list:', error));
+
+  // Fetch disk space information
+  fetchDiskSpace()
+      .then(diskSpaceData => updateDiskSpaceDisplay(diskSpaceData))
+      .catch(error => console.error('Error loading disk space:', error));
+}
+
+// Add the ".." item for navigating to the parent directory
+function addParentDirectory() {
+  const parentItem = document.createElement("div");
+  parentItem.textContent = "..";
+  parentItem.classList.add("directory");
+
+  // Navigate to parent directory on click
+  parentItem.onclick = () => {
+    if (currentPath !== "/") {
+      // Go up one directory level
+      const parentPath = currentPath.split('/').slice(0, -2).join('/') + '/';
+          
+      // Ensure we don't go above root directory
+      currentPath = parentPath === "" ? "/" : parentPath;
+
+      // Reload the file list after changing directory
+      loadFileList();
+    }
+  };
+
+  // Append ".." to the file list
+  fileList.appendChild(parentItem);
+}
+
+// Fetch the list of files and directories from the server
+function fetchFileList() {
+  return fetch(`/filelist?path=${encodeURIComponent(currentPath)}`)
+      .then(response => response.json())
+      .then(data => {
+          // Sort files alphabetically (case insensitive)
+          return data.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      });
+}
+
+// Function to display the file list in the DOM
+function displayFileList(fileListData) {
+  // Create and append file/directory items to the DOM
+  fileListData.forEach(file => {
+      const item = document.createElement("div");
+      item.textContent = file;
+
+      // Add directory styling if it's a directory (no dot in the name)
+      if (file.indexOf('.') === -1) {
+          item.classList.add("directory");
+      }
+
+      // Click event to handle item selection
+      item.onclick = () => {
+          const allItems = fileList.querySelectorAll("div");
+          allItems.forEach(el => el.classList.remove("selected"));
+          item.classList.add("selected");
+      };
+
+      // Append each item to the file list
+      fileList.appendChild(item);
+  });
+}
+
+// Fetch disk space information from the server
+function fetchDiskSpace() {
+  return fetch('/diskspace')
+      .then(response => response.json());
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//               manage short and long clicks on file list
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// global variables
+//
 let scrollDirection = 1; // Standardmäßig positiv für normale Scrollrichtung
 let touchStartX = 0; //                                                     
 let touchStartY = 0; //                                                     
@@ -20,74 +123,133 @@ let longClickTimeout; // timeout ID for handling long click events
 let isTouchDevice = false; // flag to indicate if device is touch-enabled   
 let touchMoved; //                                                          
 
+// Event listener for mousedown event on file list
+fileList.onmousedown = (event) => {
+  if (event.target !== fileList && !isTouchDevice && !clickHandled) {
+    mousedownTime = new Date().getTime();
+    clickHandled = true;
 
-// Load the list of files and directories in the current path
-function loadFileList() {
-    console.log('Loading file list...');
+    longClickTimeout = setTimeout(() => {
+      handleLongClick(event);
+    }, 500);
+  }
+};
 
-    // Send an HTTP GET request to the server to retrieve a list of files and directories in the current path
-    fetch(`/filelist?path=${encodeURIComponent(currentPath)}`)
-    .then(response => response.json())
-    .then(data => {
-        data.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-        console.log('Received sorted file list:', data);
+// Event listener for mouseup event on file list
+fileList.onmouseup = (event) => {
+  if (event.target !== fileList && !isTouchDevice && clickHandled) {
+    clearTimeout(longClickTimeout);
 
-        // Clear any previous elements from the file list display
-        fileList.innerHTML = '';
+    mouseupTime = new Date().getTime();
+    const timeDifference = mouseupTime - mousedownTime;
 
-        // If the current path is not the root directory, add a ".." directory to represent the parent directory
-        if (currentPath !== "/") {
-            const parentItem = document.createElement("div");
-            parentItem.textContent = "..";
-            parentItem.classList.add("directory");
-            parentItem.onclick = () => {
-                // Update the path to the parent directory and reload the file list display
-                currentPath = currentPath.split('/').slice(0, -2).join('/') + '/';
-                loadFileList();
-            };
-            fileList.appendChild(parentItem);
-        }
+    if (timeDifference < 500) {
+      handleShortClick(event);
+    }
 
-        // Create DOM elements for each file or directory in the list and add them to the file list display
-        const fileItems = data.map(file => {
-            const item = document.createElement("div");
-            item.textContent = file;
+    // Wartezeit von 500 ms, bevor weitere Klicks akzeptiert werden
+    setTimeout(() => {
+      clickHandled = false;
+    }, 500);
+  }
+};
 
-            // Add the "directory" class if it is a directory, to visually highlight it
-            if (file.indexOf('.') === -1) {
-                item.classList.add("directory");
-            }
+// Event listener for touchstart event on file list
+fileList.addEventListener('touchstart', (event) => {
+  if (event.target !== fileList && !clickHandled) {
+    isTouchDevice = true;
+    touchStartX = event.touches[0].clientX;
+    touchStartY = event.touches[0].clientY;
+    touchMoved = false;
+    clickHandled = true;
 
-            // Add a click handler to select the element on click
-            item.onclick = () => {
-                // Remove the "selected" class from any other elements in the file list
-                fileItems.forEach(el => el.classList.remove("selected"));
-                // Add the "selected" class to the clicked element
-                item.classList.add("selected");
-            };
-            return item;
-        });
+    mousedownTime = new Date().getTime();
 
-        // Add all created file and directory elements to the file list display
-        fileItems.forEach(item => fileList.appendChild(item));
-    })
-    .catch(error => {
-        console.error('Error loading file list:', error);
-    });
+    longClickTimeout = setTimeout(() => {
+      handleLongClick(event);
+    }, 500);
+  }
+});
 
-    // Send an HTTP GET request to the server to retrieve information about the available disk space
-    fetch('/diskspace')
-    .then(response => response.json())
-    .then(data => {
-        const { totalBytes, usedBytes } = data;
-        console.log(`Total Bytes: ${totalBytes}, Used Bytes: ${usedBytes}`);
+// Event listener for touchmove event on file list
+fileList.addEventListener('touchmove', (event) => {
+  if (event.target !== fileList) {
+    const touchEndX = event.touches[0].clientX;
+    const touchEndY = event.touches[0].clientY;
+    const touchDistance = Math.sqrt(
+      Math.pow(touchEndX - touchStartX, 2) + Math.pow(touchEndY - touchStartY, 2)
+    );
 
-        // Update the disk space display with the retrieved information
-        const diskSpaceDisplay = document.getElementById('diskSpace');
-        diskSpaceDisplay.textContent = "SD memory total: " + Math.floor(totalBytes / 1048576) + " MB, free: " + Math.floor((totalBytes - usedBytes) / 1048576) + " MB";
-      })
-    .catch(error => console.error(error));
+    if (touchDistance > 10) {
+      touchMoved = true;
+      clearTimeout(longClickTimeout);
+    }
+  }
+});
+
+// Event listener for touchend event on file list
+fileList.addEventListener('touchend', (event) => {
+  if (event.target !== fileList && clickHandled) {
+    clearTimeout(longClickTimeout);
+
+    mouseupTime = new Date().getTime();
+    const timeDifference = mouseupTime - mousedownTime;
+
+    if (!touchMoved && timeDifference < 500) {
+      handleShortClick(event);
+    }
+
+    // Wartezeit von 500 ms, bevor weitere Klicks akzeptiert werden
+    setTimeout(() => {
+      clickHandled = false;
+    }, 500);
+  }
+
+  touchMoved = false;
+});
+
+// Check if it is a touch-enabled device
+if ('ontouchstart' in window || navigator.msMaxTouchPoints) {
+    scrollDirection = -1; // Reverse scroll direction for touch-enabled devices
+}  
+  
+// Handle short click event on file item
+function handleShortClick(event) {
+  console.log('Short click event triggered.'); // Überprüfen Sie, ob diese Zeile im Konsolenprotokoll erscheint.
+
+  fileItems.forEach(item => {
+    item.classList.remove("selected");
+  });
+
+  event.target.classList.add("selected");
+  const fileName = event.target.textContent;
+  
+  if (fileName.indexOf('.') === -1) {
+    currentPath += fileName + "/";
+    console.log("Current path: " + currentPath);
+    loadFileList();
+  }
+  previewFile(currentPath + fileName);
 }
+
+// Handle long click event on file item
+function handleLongClick(event) {
+  selectedFile = event.target.textContent;
+  if (selectedFile.indexOf("..") !== -1) {
+    // Do nothing
+  } else if (selectedFile.indexOf(".") !== -1) {
+    selectedFilePath = currentPath + selectedFile;
+    document.getElementById("text-selected-file").value = "Selected file: " + selectedFilePath;
+    previewFile(selectedFilePath);
+  } else {
+    selectedFilePath = currentPath + selectedFile +"/";
+    document.getElementById("text-selected-file").value = "Selected folder: " + selectedFilePath;
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                    file functions of server
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Download a file from the server using the specified URL
 function downloadFile(fileUrl) {
@@ -123,7 +285,6 @@ function deleteFile(filename) {
   });
 }
 
-  
 // Extract the file name from a given URL
 function getFileNameFromUrl(url) {
     // Splits the URL by "/" and returns the last element of the resulting array, which is the filename
@@ -154,6 +315,10 @@ function getFileSize(filename) {
       })
       .catch(error => console.error(error));
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                    preview file content
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Preview the contents of a file with the specified name
 function previewFile(fileName) {
@@ -292,131 +457,6 @@ function clearSelectedFilePath() {
   document.getElementById('fileSize').textContent = "";
 }
 
-// Event listener for mousedown event on file list
-fileList.onmousedown = (event) => {
-  if (event.target !== fileList && !isTouchDevice && !clickHandled) {
-    mousedownTime = new Date().getTime();
-    clickHandled = true;
-
-    longClickTimeout = setTimeout(() => {
-      handleLongClick(event);
-    }, 500);
-  }
-};
-
-// Event listener for mouseup event on file list
-fileList.onmouseup = (event) => {
-  if (event.target !== fileList && !isTouchDevice && clickHandled) {
-    clearTimeout(longClickTimeout);
-
-    mouseupTime = new Date().getTime();
-    const timeDifference = mouseupTime - mousedownTime;
-
-    if (timeDifference < 500) {
-      handleShortClick(event);
-    }
-
-    // Wartezeit von 500 ms, bevor weitere Klicks akzeptiert werden
-    setTimeout(() => {
-      clickHandled = false;
-    }, 500);
-  }
-};
-
-// Event listener for touchstart event on file list
-fileList.addEventListener('touchstart', (event) => {
-  if (event.target !== fileList && !clickHandled) {
-    isTouchDevice = true;
-    touchStartX = event.touches[0].clientX;
-    touchStartY = event.touches[0].clientY;
-    touchMoved = false;
-    clickHandled = true;
-
-    mousedownTime = new Date().getTime();
-
-    longClickTimeout = setTimeout(() => {
-      handleLongClick(event);
-    }, 500);
-  }
-});
-
-// Event listener for touchmove event on file list
-fileList.addEventListener('touchmove', (event) => {
-  if (event.target !== fileList) {
-    const touchEndX = event.touches[0].clientX;
-    const touchEndY = event.touches[0].clientY;
-    const touchDistance = Math.sqrt(
-      Math.pow(touchEndX - touchStartX, 2) + Math.pow(touchEndY - touchStartY, 2)
-    );
-
-    if (touchDistance > 10) {
-      touchMoved = true;
-      clearTimeout(longClickTimeout);
-    }
-  }
-});
-
-// Event listener for touchend event on file list
-fileList.addEventListener('touchend', (event) => {
-  if (event.target !== fileList && clickHandled) {
-    clearTimeout(longClickTimeout);
-
-    mouseupTime = new Date().getTime();
-    const timeDifference = mouseupTime - mousedownTime;
-
-    if (!touchMoved && timeDifference < 500) {
-      handleShortClick(event);
-    }
-
-    // Wartezeit von 500 ms, bevor weitere Klicks akzeptiert werden
-    setTimeout(() => {
-      clickHandled = false;
-    }, 500);
-  }
-
-  touchMoved = false;
-});
-
-// Check if it is a touch-enabled device
-if ('ontouchstart' in window || navigator.msMaxTouchPoints) {
-    scrollDirection = -1; // Reverse scroll direction for touch-enabled devices
-}  
-  
-// Handle short click event on file item
-function handleShortClick(event) {
-  console.log('Short click event triggered.'); // Überprüfen Sie, ob diese Zeile im Konsolenprotokoll erscheint.
-
-  fileItems.forEach(item => {
-    item.classList.remove("selected");
-  });
-
-  event.target.classList.add("selected");
-  const fileName = event.target.textContent;
-  
-  if (fileName.indexOf('.') === -1) {
-    currentPath += fileName + "/";
-    console.log("Current path: " + currentPath);
-    loadFileList();
-  }
-
-  previewFile(currentPath + fileName);
-}
-
-// Handle long click event on file item
-function handleLongClick(event) {
-  selectedFile = event.target.textContent;
-  if (selectedFile.indexOf("..") !== -1) {
-    // Do nothing
-  } else if (selectedFile.indexOf(".") !== -1) {
-    selectedFilePath = currentPath + selectedFile;
-    document.getElementById("text-selected-file").value = "Selected file: " + selectedFilePath;
-    previewFile(selectedFilePath);
-  } else {
-    selectedFilePath = currentPath + selectedFile +"/";
-    document.getElementById("text-selected-file").value = "Selected folder: " + selectedFilePath;
-  }
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -461,7 +501,8 @@ async function processSelectedFile(file) {
         originalImage.height = img.height;
 
         imageFile = new File([file], file.name, { type: file.type });
-        if (file.type === 'image/gif') {
+        if (file.name.endsWith(".gif")||file.name.endsWith(".GIF")){
+          console.log("es wurde ein GIF-File geladen");
           isGif = true;
           frameN = 0;
         } else {
@@ -518,6 +559,7 @@ async function handleFileSelect() {
 
 // Function to process the image with aspect ratio preservation or cropping
 async function processImage(img, file, isGif, frameNumber) {
+  console.log("processImage - file: "+file.name);
   const scaleCheckbox = document.getElementById('scale');
 
   return new Promise(async (resolve, reject) => {
@@ -585,8 +627,10 @@ async function loadImg(filePath) {
     const response = await fetch('/downloadfile?filename=' + filePath);
     const blob = await response.blob();
 
+    const fileN = filePath.split('/').pop();
+
     // Rufe die Funktion processSelectedFile auf und übergebe das geladene Bild.
-    await processSelectedFile(new File([blob], filePath, { type: blob.type }));
+    await processSelectedFile(new File([blob], fileN, { type: blob.type }));
 
   } catch (error) {
     console.error('Error loading image:', error);
@@ -845,6 +889,7 @@ async function extractGifFrame(file, frameNumber) {
         var currCtx = curr.getContext('2d');
         
         if (frameNumber === 0) {
+          numberOfFrames = numFrames;
           prevCtx.fillStyle = 'white';                        // set prev to background color (white)
           prevCtx.fillRect(0, 0, prev.width, prev.height);
           currCtx.fillStyle = 'white';                        // set prev to background color (white)
@@ -944,13 +989,6 @@ function getRDCNames() {
     });
 }
 
-// Extract the file name from a given URL
-function getFileNameFromUrl(url) {
-  // Splits the URL by "/" and returns the last element of the resulting array, which is the filename
-  var parts = url.split("/");
-  return parts[parts.length - 1];
-}
-
 // Create a canvas element and resize the image to 110x110 pixels.
 const canvasPreview = document.createElement('canvas');
 canvasPreview.width = 110;
@@ -963,18 +1001,12 @@ const imageDataPreview = ctx.getImageData(0, 0, canvasPreview.width, canvasPrevi
 originalPixels = new Uint8ClampedArray(imageDataPreview.data);
 currentPixels = new Uint8ClampedArray(imageDataPreview.data);
 
-// Event listener for when the DOM is fully loaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('Document loaded.');
-    document.getElementById('option1').checked = true;
-    loadFileList();
-    getRDCNames();
-});
 
 
 // Event listener for load button
 document.getElementById("load-img").onclick = async () => {
   if (selectedFilePath !== "") {
+    console.log("loadImg: "+selectedFilePath);
     await loadImg(selectedFilePath)
   } else {
     await handleFileSelect();
@@ -998,24 +1030,28 @@ document.getElementById("fm-done").onclick = () => {
 // Event listener for "select clock face" button
 document.getElementById("select-clock-face").onclick = () => {
   if (selectedFilePath !== "") {
-        let rememberSelectedFilePath = selectedFilePath;
-        // Send an HTTP POST request to the server to delete the specified file
-        fetch(`/selectclockface?filename=${selectedFilePath}`)
-        .then((response) => {
-          if (response.ok) {
-            document.getElementById("rdc-clock-face").textContent = getFileNameFromUrl(rememberSelectedFilePath);
-            console.log("rememberSelectedFilePath: " + getFileNameFromUrl(rememberSelectedFilePath));
-          } else {
-            document.getElementById("rdc-clock-face").textContent = "default";
-            console.log("Fehler bei der Anfrage. Status: " + response.status);
-          }
-        })
-        .catch((error) => {
-          // Hier kannst du Fehlerbehandlung durchführen
-          console.log("Fehler bei der Anfrage:" + error);
-        });
+      // Überprüfen, ob die Datei die Endung ".rdc" hat
+      if (selectedFilePath.endsWith(".rdc")) {
+          let rememberSelectedFilePath = selectedFilePath;
+          // Send an HTTP POST request to the server to save the specified file
+          fetch(`/selectclockface?filename=${selectedFilePath}`)
+              .then((response) => {
+                  if (response.ok) {
+                      document.getElementById("rdc-clock-face").textContent = getFileNameFromUrl(rememberSelectedFilePath);
+                      console.log("rememberSelectedFilePath: " + getFileNameFromUrl(rememberSelectedFilePath));
+                  } else {
+                      document.getElementById("rdc-clock-face").textContent = "default";
+                      console.log("Fehler bei der Anfrage. Status: " + response.status);
+                  }
+              })
+              .catch((error) => {
+                  console.log("Fehler bei der Anfrage:" + error);
+              });
+      } else {
+          alert("Select file with extension '.rdc', please.");
+      }
   } else {
-    alert("Click and hold to select a .rdc file.");
+      alert("Click and hold to select a .rdc file.");
   }
   clearSelectedFilePath();
 };
@@ -1032,23 +1068,27 @@ document.getElementById("clr-clock-face").onclick = () => {
 // Event listener for "select logo" button
 document.getElementById("select-logo").onclick = () => {
   if (selectedFilePath !== "") {
-        let rememberSelectedFilePath = selectedFilePath;
-        // Send an HTTP POST request to the server to delete the specified file
-        fetch(`/selectlogo?filename=${selectedFilePath}`)
-        .then((response) => {
-          if (response.ok) {
-            document.getElementById("rdc-logo").textContent = getFileNameFromUrl(rememberSelectedFilePath);
-            console.log("rememberSelectedFilePath: " + getFileNameFromUrl(rememberSelectedFilePath));
-          } else {
-            console.log("Fehler bei der Anfrage. Status: " + response.status);
-          }
-        })
-        .catch((error) => {
-          // Hier kannst du Fehlerbehandlung durchführen
-          console.log("Fehler bei der Anfrage:" + error);
-        });
+      // Überprüfen, ob die Datei die Endung ".rdc" hat
+      if (selectedFilePath.endsWith(".rdc")) {
+          let rememberSelectedFilePath = selectedFilePath;
+          // Send an HTTP POST request to the server to save the specified file
+          fetch(`/selectlogo?filename=${selectedFilePath}`)
+              .then((response) => {
+                  if (response.ok) {
+                      document.getElementById("rdc-logo").textContent = getFileNameFromUrl(rememberSelectedFilePath);
+                      console.log("rememberSelectedFilePath: " + getFileNameFromUrl(rememberSelectedFilePath));
+                  } else {
+                      console.log("Fehler bei der Anfrage. Status: " + response.status);
+                  }
+              })
+              .catch((error) => {
+                  console.log("Fehler bei der Anfrage:" + error);
+              });
+      } else {
+          alert("Select file with extension '.rdc', please.");
+      }
   } else {
-    alert("Click and hold to select a .rdc file.");
+      alert("Click and hold to select a .rdc file.");
   }
   clearSelectedFilePath();
 };
@@ -1056,27 +1096,30 @@ document.getElementById("select-logo").onclick = () => {
 // Event listener for "select image" button
 document.getElementById("select-image").onclick = () => {
   if (selectedFilePath !== "") {
-        let rememberSelectedFilePath = selectedFilePath;
-        // Send an HTTP POST request to the server to delete the specified file
-        fetch(`/selectimage?filename=${selectedFilePath}`)
-        .then((response) => {
-          if (response.ok) {
-            document.getElementById("rdc-image").textContent = getFileNameFromUrl(rememberSelectedFilePath);
-            console.log("rememberSelectedFilePath: " + getFileNameFromUrl(rememberSelectedFilePath));
-          } else {
-            console.log("Fehler bei der Anfrage. Status: " + response.status);
-          }
-        })
-        .catch((error) => {
-          // Hier kannst du Fehlerbehandlung durchführen
-          console.log("Fehler bei der Anfrage:" + error);
-        });
+      // Überprüfen, ob die Datei die Endung ".rdc" hat
+      if (selectedFilePath.endsWith(".rdc")) {
+          let rememberSelectedFilePath = selectedFilePath;
+          // Send an HTTP POST request to the server to save the specified file
+          fetch(`/selectimage?filename=${selectedFilePath}`)
+              .then((response) => {
+                  if (response.ok) {
+                      document.getElementById("rdc-image").textContent = getFileNameFromUrl(rememberSelectedFilePath);
+                      console.log("rememberSelectedFilePath: " + getFileNameFromUrl(rememberSelectedFilePath));
+                  } else {
+                      console.log("Fehler bei der Anfrage. Status: " + response.status);
+                  }
+              })
+              .catch((error) => {
+                  console.log("Fehler bei der Anfrage:" + error);
+              });
+      } else {
+          alert("Select file with extension '.rdc', please.");
+      }
   } else {
-    alert("Click and hold to select a .rdc file.");
+      alert("Click and hold to select a .rdc file.");
   }
   clearSelectedFilePath();
 };
-
 
 
 

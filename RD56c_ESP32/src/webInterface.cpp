@@ -11,14 +11,6 @@
 #define ASYNCWEBSERVER_REGEX
 #endif
 
-#include <AsyncEventSource.h>
-#include <AsyncJson.h>
-#include <AsyncWebSynchronization.h>
-#include <ESPAsyncWebServer.h>
-#include <StringArray.h>
-#include <WebAuthentication.h>
-#include <WebHandlerImpl.h>
-#include <WebResponseImpl.h>
 
 
 /* The webInterface implementation has been inspired and uses code from 
@@ -44,15 +36,9 @@
 #include "RD_40.h"
 #include <Arduino.h>
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <ArduinoJson.h>
+#include <WebServer.h>
 #include <SD.h>
 
-File webInterface::_activeUpload;
-String webInterface::_activeUploadFileName;
-
-webInterface* webInterface::_instance = nullptr;                //initialize static variable _instance
 
 // =========================================================================================================================================
 //                                                      Constructor
@@ -68,10 +54,6 @@ webInterface::webInterface() {
 void webInterface::begin(String ssid_) {
   _ssid = ssid_;
 
-  _apiKey_f.begin();                                    // initialize LittleFS (only once)
-
-  String fileText;
-
   apiKey = _apiKey_f.read_f();
   location = _location_f.read_f();
   country = _country_f.read_f();
@@ -79,8 +61,11 @@ void webInterface::begin(String ssid_) {
   logoPath = _logoPath_f.read_f();
   imagePath = _imagePath_f.read_f();
   
-  _instance = this;
   _startServer();
+}
+
+void webInterface::update() {
+  _server.handleClient();
 }
 
 
@@ -88,33 +73,45 @@ void webInterface::begin(String ssid_) {
 //                                                        _startServer() and webSocket handlers
 // =========================================================================================================================================
 
+void webInterface::_serveFile(const char* filePath, const char* mimeType) {
+  File file = SD.open(filePath, FILE_READ);
+  if (!file) {
+    _server.send(404, "text/plain", "File not found");
+    return;
+  }
+  
+  String fileContent = "";
+  while (file.available()) {
+    fileContent += (char)file.read();
+  }
+  file.close();
+  
+  _server.send(200, mimeType, fileContent);
+}
+
 void webInterface::_startServer() {
   
   // ====================================================================================
   // index
   // ====================================================================================
 
-  _server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
-  {
-    Serial.println("index called");
-    request->send(SD, "/html/index.html", "text/html");
+  _server.on("/", [this]() {
+    _serveFile("/html/index.html", "text/html");
   });
 
-  _server.on("/index.css", HTTP_GET, [this](AsyncWebServerRequest *request)
-  {
-    request->send(SD, "/html/css/index.css", "text/css");
+  _server.on("/index.css", [this]() {
+    _serveFile("/html/css/index.css", "text/css");
   });
 
-  _server.on("/index.js", HTTP_GET, [this](AsyncWebServerRequest *request)
-  {
-    request->send(SD, "/html/scripts/index.js", "text/javascript");
+  _server.on("/index.js", [this]() {
+    _serveFile("/html/scripts/index.js", "text/javascript");
   });
 
-  _server.on("/favicon.ico", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "OK");
+  _server.on("/favicon.ico", [this]() {
+    _server.send(200, "text/plain", "OK");
   });
 
-  _server.on("/getParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
+  _server.on("/getParam", [this]() {
     JsonDocument doc;
     doc["mode"] = clockMode;
     doc["brightness"] = brightness;
@@ -124,19 +121,18 @@ void webInterface::_startServer() {
 
     String response;
     serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    _server.send(200, "application/json", response);
   });
 
-  _server.on("/configDone", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/index.html", "text/html");
+  _server.on("/configDone", [this]() {
+    _serveFile("/html/index.html", "text/html");
   });
 
-  _server.on("/updateradiobutton", HTTP_GET, [this] (AsyncWebServerRequest *request) {
+  _server.on("/updateradiobutton", [this] () {
     String button;
-    
-    if (request->hasParam("button")) {       
-      button = request->getParam("button")->value();
-      
+    if (_server.hasArg("button")) {       
+      button = _server.arg("button");
+  
       if (button=="option1") clockMode=0;
       if (button=="option2") clockMode=1;
       if (button=="option3") clockMode=2;
@@ -147,37 +143,37 @@ void webInterface::_startServer() {
     else {
       clockMode=0;
     }
-    request->send(200, "text/plain", "OK");
+    _server.send(200, "text/plain", "OK");
   });
 
-  _server.on("/slider", HTTP_GET, [this] (AsyncWebServerRequest *request) {
-    if (request->hasParam("value")) {
-      _brightness_s = request->getParam("value")->value();
+  _server.on("/slider", [this] () {
+    if (_server.hasArg("value")) {
+      _brightness_s = _server.arg("value");
       brightness = _brightness_s.toInt();
       Serial.println("Slider value = " + _brightness_s);
     } else {
       Serial.println("no slider value sent");
     }
-    request->send(200, "text/plain", "OK");
+    _server.send(200, "text/plain", "OK");
   });
 
   // ====================================================================================
   // configWeather
   // ====================================================================================
 
-  _server.on("/configWeather", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/configWeather.html", "text/html");
+  _server.on("/configWeather", [this]() {
+    _serveFile("/html/configWeather.html", "text/html");
   });
 
-  _server.on("/configWeather.css", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/css/configWeather.css", "text/css");
+  _server.on("/configWeather.css", [this]() {
+    _serveFile("/html/css/configWeather.css", "text/css");
   });
 
-  _server.on("/configWeather.js", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/scripts/configWeather.js", "text/javascript");
+  _server.on("/configWeather.js", [this]() {
+    _serveFile("/html/scripts/configWeather.js", "text/javascript");
   });
 
-  _server.on("/getWeatherParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
+  _server.on("/getWeatherParam", [this]() {
     JsonDocument doc;
     doc["apiKey"] = _apiKey_f.read_f();
     doc["location"] = _location_f.read_f();
@@ -188,10 +184,10 @@ void webInterface::_startServer() {
 
     String response;
     serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    _server.send(200, "application/json", response);
   });
 
-    _server.on("/getWeather", HTTP_GET, [this](AsyncWebServerRequest *request) {
+  _server.on("/getWeather", [this]() {
     JsonDocument doc;
     doc["w_icon"] = _w_icon;
     doc["w_temp"] = _w_temp;
@@ -199,15 +195,16 @@ void webInterface::_startServer() {
 
     String response;
     serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    _server.send(200, "application/json", response);
   });
 
-  _server.on("/uploadWeatherParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if ((request->hasParam("value1"))&&(request->hasParam("value2"))&&(request->hasParam("value3"))){ 
-      apiKey = request->getParam("value1")->value();
-      location = request->getParam("value2")->value();
-      country = request->getParam("value3")->value();
-      
+  _server.on("/uploadWeatherParam", [this]() {
+    if ((_server.hasArg("value1"))&&(_server.hasArg("value2"))&&(_server.hasArg("value3")))
+    { 
+      apiKey = _server.arg("value1");
+      location = _server.arg("value2");
+      country = _server.arg("value3");
+ 
       Serial.print("apiKey: ");
       Serial.println(apiKey);
       Serial.print("location: ");
@@ -220,17 +217,22 @@ void webInterface::_startServer() {
       _country_f.write_f(country);
     }
 
-      request->send(200, "text/plain", "OK");
-
+    _server.send(200, "text/plain", "OK");
     updateWeather=true;
-
   });
 
   for (int i = 0; i < 9; i++) {
     String path = "/w_img" + String(i) + ".PNG";
-    _server.on(path.c_str(), HTTP_GET, [i](AsyncWebServerRequest *request) {
-        String webImage = "/html/images/w_img" + String(i) + ".png";
-        request->send(SD, webImage, "image/png");
+    _server.on(path.c_str(), [this, i]() {
+      String webImage = "/html/images/w_img" + String(i) + ".png";
+      
+      File file = SD.open(webImage, FILE_READ);
+      String fileContent = "";
+      while (file.available()) {
+        fileContent += (char)file.read();
+      }
+      file.close();
+      _server.send(200, "image/png", fileContent);
     });
   }
 
@@ -239,20 +241,20 @@ void webInterface::_startServer() {
   // resetWifi
   // ====================================================================================
 
-  _server.on("/resetWifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/resetWifi.html", "text/html");
+  _server.on("/resetWifi", [this]() {
+    _serveFile("/html/resetWifi.html", "text/html");
   });
 
-  _server.on("/resetWifi.css", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/css/resetWifi.css", "text/css");
+  _server.on("/resetWifi.css", [this]() {
+    _serveFile("/html/css/resetWifi.css", "text/css");
   });
 
-  _server.on("/resetWifi.js", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/scripts/resetWifi.js", "text/javascript");
+  _server.on("/resetWifi.js", [this]() {
+    _serveFile("/html/scripts/resetWifi.js", "text/javascript");
   });
 
-  _server.on("/reset", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "OK");
+  _server.on("/reset", [this]() {
+    _server.send(200, "text/plain", "OK");
     FlashFS* flashFs1 = new FlashFS("/variables/ssid.txt");
     flashFs1 -> delete_f();
     delete flashFs1;
@@ -261,25 +263,25 @@ void webInterface::_startServer() {
     delete flashFs2;
   });
 
-  _server.on("/getWifiParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
+  _server.on("/getWifiParam", [this]() {
     JsonDocument doc;
     doc["ssid"] = _ssid_f.read_f();
     doc["password"] = _password_f.read_f();
 
     String response;
     serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    _server.send(200, "application/json", response);
   });
 
-  _server.on("/uploadWifiParam", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if ((request->hasParam("value1"))&&(request->hasParam("value2"))){ 
-      String _ssid = request->getParam("value1")->value();
-      String _password = request->getParam("value2")->value();
+  _server.on("/uploadWifiParam", [this]() {
+    if ((_server.hasArg("value1"))&&(_server.hasArg("value2"))){ 
+      String _ssid = _server.arg("value1");
+      String _password = _server.arg("value2");
       
       _ssid_f.write_f(_ssid);
       _password_f.write_f(_password);
     }
-    request->send(200, "text/plain", "OK");
+    _server.send(200, "text/plain", "OK");
   });
 
 
@@ -287,20 +289,20 @@ void webInterface::_startServer() {
   // fileManager
   // ====================================================================================
 
-  _server.on("/fileManager", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/fileManager.html", "text/html");
+  _server.on("/fileManager", [this]() {
+    _serveFile("/html/fileManager.html", "text/html");
   });
 
-  _server.on("/fileManager.css", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/css/fileManager.css", "text/css");
+  _server.on("/fileManager.css", [this]() {
+    _serveFile("/html/css/fileManager.css", "text/css");
   });
 
-  _server.on("/fileManager.js", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/scripts/fileManager.js", "text/javascript");
+  _server.on("/fileManager.js", [this]() {
+    _serveFile("/html/scripts/fileManager.js", "text/javascript");
   });
 
-  _server.on("/filelist", HTTP_GET, [this](AsyncWebServerRequest *request) { /// ///
-    _currentPath = request->getParam("path")->value();
+  _server.on("/filelist", [this]() {
+    _currentPath = _server.arg("path");
     String json;
     {
       String _currentPath_s = _currentPath;
@@ -310,13 +312,11 @@ void webInterface::_startServer() {
       FlashFS flashFs(_currentPath_s);
       json = flashFs.listFilesInJson();
     }
-    Serial.println("webinterface Pfad: " + _currentPath);
-    Serial.println("webinterface JSON: " + json);
-    request->send(200, "application/json", json);
+    _server.send(200, "application/json", json);
   });
 
-  _server.on("/deletefile", HTTP_GET, [this](AsyncWebServerRequest *request) {   /// ///
-    String fileName = request->getParam("filename")->value();
+  _server.on("/deletefile", [this]() {
+    String fileName = _server.arg("filename");
     Serial.print("webinterface: delete file: ");
     Serial.println(fileName);
 
@@ -334,23 +334,23 @@ void webInterface::_startServer() {
         FlashFS flashFs("/");
         json = flashFs.listFilesInJson();
     }
-    request->send(200, "application/json", json);
+    _server.send(200, "application/json", json);
   });
 
-  _server.on("/renamefile", HTTP_GET, [this](AsyncWebServerRequest *request) { /// ///
-    String oldFileName = request->getParam("oldfilename")->value();
-    String newFileName = request->getParam("newfilename")->value();
-    if (!oldFileName.length()!=0 && oldFileName[oldFileName.length() - 1] == '/') {
+  _server.on("/renamefile", [this]() {
+    String oldFileName = _server.arg("oldfilename");
+    String newFileName = _server.arg("newfilename");
+    if (oldFileName.length()!=0 && oldFileName[oldFileName.length() - 1] == '/') {
       oldFileName = oldFileName.substring(0, oldFileName.length() - 1);
     }
-    if (!newFileName.length()!=0 && newFileName[newFileName.length() - 1] == '/') {
+    if (newFileName.length()!=0 && newFileName[newFileName.length() - 1] == '/') {
       newFileName = newFileName.substring(0, newFileName.length() - 1);
     }
 
     if (SD.exists(newFileName.c_str())) {
       // File with newFileName already exists, send an error response
       Serial.println("File with the new name already exists.");
-      request->send(400, "text/plain", "File with the new name already exists.");
+      _server.send(400, "text/plain", "File with the new name already exists.");
       return;
     }
 
@@ -368,13 +368,13 @@ void webInterface::_startServer() {
         FlashFS flashFs("/");
         json = flashFs.listFilesInJson();
     }
-    request->send(200, "application/json", json);
+    _server.send(200, "application/json", json);
   });
 
-  _server.on("/copyfile", HTTP_GET, [this](AsyncWebServerRequest *request) { /// ///
-    String sourcePath = request->getParam("source")->value();
-    String destPath = request->getParam("destination")->value();
-    int moveFlag = request->getParam("moveflag")->value().toInt();
+  _server.on("/copyfile", [this]() {
+    String sourcePath = _server.arg("source");
+    String destPath = _server.arg("destination");
+    int moveFlag = _server.arg("moveflag").toInt();
  
     if (sourcePath.indexOf('.') == -1) {             // if directory
       if (destPath.startsWith(sourcePath)) {
@@ -389,7 +389,6 @@ void webInterface::_startServer() {
       }
       destPath += lastFolder;
       destPath += "/";
-
       sourcePath = sourcePath.substring(0, sourcePath.length()-1);
     }
     else {
@@ -413,11 +412,11 @@ void webInterface::_startServer() {
         FlashFS flashFs("/");
         json = flashFs.listFilesInJson();
     }
-    request->send(200, "application/json", json);
+    _server.send(200, "application/json", json);
   });
 
-  _server.on("/mkdir", HTTP_GET, [this](AsyncWebServerRequest *request) { /// ///
-    String newDir = request->getParam("filename")->value();
+  _server.on("/mkdir", [this]() {
+    String newDir = _server.arg("filename");
     if (newDir.length()!=0 && newDir[newDir.length() - 1] == '/') {
       newDir = newDir.substring(0, newDir.length() - 1);
     }
@@ -429,18 +428,14 @@ void webInterface::_startServer() {
         FlashFS flashFs("/");
         json = flashFs.listFilesInJson();
     }
-    request->send(200, "application/json", json);
+    _server.send(200, "application/json", json);
   });
 
-  _server.on("/uploadfile", HTTP_POST, [this](AsyncWebServerRequest *request) {
-    Serial.println("/uploadfile.....");
-    request->send(200);
-  }, _handleUpload);
+  _server.on("/uploadfile", HTTP_POST, [this](){ _server.send(200);}, [this]() {_handleFileUpload();});
 
-
-  _server.on("/downloadfile", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if (request->hasParam("filename")) {
-      String filename = request->getParam("filename")->value();
+  _server.on("/downloadfile", [this]() {
+    if (_server.hasArg("filename")) {
+      String filename = _server.arg("filename");
       String contentType = "application/octet-stream";
       if (filename.endsWith(".txt")) {
         contentType = "text/plain";
@@ -463,89 +458,99 @@ void webInterface::_startServer() {
       } else if (filename.endsWith(".bmp")) {
         contentType = "image/bmp";
       }
-      request->send(SD, filename, contentType);
-    }
+
+      File download = SD.open(filename);
+      if (download) {
+        _server.sendHeader("Content-Type", contentType);
+        _server.sendHeader("Content-Disposition", "attachment; filename="+filename);
+        _server.sendHeader("Connection", "close");
+        _server.streamFile(download, "application/octet-stream");
+        download.close();
+        _server.send(200, "text/html", "download sucessfully completed");
+      } else {
+        _server.send(404, "text/plain", "not found");
+      }
+    }  
   });
 
-  _server.on("/fileSize", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if (request->hasParam("filename")) {
-      String filename = request->getParam("filename")->value();
+  _server.on("/fileSize", [this]() {
+    if (_server.hasArg("filename")) {
+      String filename = _server.arg("filename");
       if (SD.exists(filename)) {
-        File file = SD.open(filename, "r");
+        File file = SD.open(filename, FILE_READ);
         String fileSize = String(file.size());
-        request->send(200, "application/json", "{\"size\":" + fileSize + "}");
+        _server.send(200, "application/json", "{\"size\":" + fileSize + "}");
         file.close();
       } else {
-        request->send(404);
+        _server.send(404);
       }
     }
   });
 
-  _server.on("/diskspace", HTTP_GET, [this](AsyncWebServerRequest *request) {
+ _server.on("/diskspace", [this]() {
     String totalBytes = String(SD.totalBytes());
     String usedBytes = String(SD.usedBytes());
     String response = "{\"totalBytes\": " + totalBytes + ", \"usedBytes\": " + usedBytes + "}"; // JSON-Response erstellen
-    request->send(200, "application/json", response); // Response zurücksenden
+    _server.send(200, "application/json", response); // Response zurücksenden
   });
 
   // ====================================================================================
   // RDC Image Manager
   // ====================================================================================
 
-  _server.on("/rdcImageManager", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/rdcImageManager.html", "text/html");
+  _server.on("/rdcImageManager", [this]() {
+    _serveFile("/html/rdcImageManager.html", "text/html");
   });
 
-  _server.on("/rdcImageManager.css", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/css/rdcImageManager.css", "text/css");
+  _server.on("/rdcImageManager.css", [this]() {
+    _serveFile("/html/css/rdcImageManager.css", "text/css");
   });
 
-  _server.on("/rdcImageManager.js", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/scripts/rdcImageManager.js", "text/javascript");
+  _server.on("/rdcImageManager.js", [this]() {
+    _serveFile("/html/scripts/rdcImageManager.js", "text/javascript");
   });
 
-  _server.on("/omggif.js", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/omggif/omggif.js", "text/javascript");
+  _server.on("/omggif.js", [this]() {
+    _serveFile("/html/omggif/omggif.js", "text/javascript");
   });
 
-  _server.on("/selectclockface", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if (request->hasParam("filename")) {
-      clockFacePath = request->getParam("filename")->value();
+  _server.on("/selectclockface", [this]() {
+    if (_server.hasArg("filename")) {
+      clockFacePath = _server.arg("filename");
       _clockFacePath_f.write_f(clockFacePath);
-
-      request->send(200, "text/plain", "File selection saved successfully.");
+      _server.send(200, "text/plain", "File selection saved successfully.");
     } else {
-      request->send(400, "text/plain", "Invalid request.");
+      _server.send(400, "text/plain", "Invalid request.");
     }
   });
 
-  _server.on("/selectlogo", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if (request->hasParam("filename")) {
-      logoPath = request->getParam("filename")->value();
+  _server.on("/selectlogo", [this]() {
+    if (_server.hasArg("filename")) {
+      logoPath = _server.arg("filename");
       _logoPath_f.write_f(logoPath);
 
       Serial.print("selected logo: ");
       Serial.println(logoPath);
-      request->send(200, "text/plain", "File selection saved successfully.");
+      _server.send(200, "text/plain", "File selection saved successfully.");
     } else {
-      request->send(400, "text/plain", "Invalid request.");
+      _server.send(400, "text/plain", "Invalid request.");
     }
   });
 
-  _server.on("/selectimage", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if (request->hasParam("filename")) {
-      imagePath = request->getParam("filename")->value();
+  _server.on("/selectimage", [this]() {
+    if (_server.hasArg("filename")) {
+      imagePath = _server.arg("filename");
       _imagePath_f.write_f(imagePath);
 
       Serial.print("selected image: ");
       Serial.println(imagePath);
-      request->send(200, "text/plain", "File selection saved successfully.");
+      _server.send(200, "text/plain", "File selection saved successfully.");
     } else {
-      request->send(400, "text/plain", "Invalid request.");
+      _server.send(400, "text/plain", "Invalid request.");
     }
   });
 
-  _server.on("/getRDCNames", HTTP_GET, [this](AsyncWebServerRequest *request) {
+  _server.on("/getRDCNames", [this]() {
     JsonDocument doc;
     doc["clockface"] = _clockFacePath_f.read_f();
     doc["logo"] = _logoPath_f.read_f();
@@ -553,21 +558,28 @@ void webInterface::_startServer() {
 
     String response;
     serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    _server.send(200, "application/json", response);
   });
 
 
-  _server.on("/downloadfilepart1", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    if (request->hasParam("filename")) {
-      String filename = request->getParam("filename")->value();
+  _server.on("/downloadfilepart1", [this]() {
+    if (_server.hasArg("filename")) {
+      String filename = _server.arg("filename");
       String contentType = "application/octet-stream";
+      Serial.println("/downloadfilepart1 filename: "+filename);
 
       FlashFS* sourceFile = new FlashFS(filename);
       String tempFileName = "/temp.rdc";
       sourceFile -> copyFirstImage(tempFileName);
       delete sourceFile;
 
-      request->send(SD, tempFileName, contentType);
+      String fileContent = "";
+      File file = SD.open(tempFileName, FILE_READ);
+      while (file.available()) {
+        fileContent += (char)file.read();
+      }
+      file.close();
+      _server.send(200, contentType, fileContent);
     }
   });
 
@@ -577,28 +589,24 @@ void webInterface::_startServer() {
   // ====================================================================================
 
 
-  _server.on("/timeZone", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/timeZone.html", "text/html");
+  _server.on("/timeZone", [this]() {
+    _serveFile("/html/timeZone.html", "text/html");
   });
 
-  _server.on("/timeZone.css", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/css/timeZone.css", "text/css");
+  _server.on("/timeZone.css", [this]() {
+    _serveFile("/html/css/timeZone.css", "text/css");
   });
 
-  _server.on("/timeZone.js", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    request->send(SD, "/html/scripts/timeZone.js", "text/javascript");
+  _server.on("/timeZone.js", [this]() {
+    _serveFile("/html/scripts/timeZone.js", "text/javascript");
   });
 
-
-  _server.on("/timeZoneData", HTTP_GET, [this](AsyncWebServerRequest *request) {
+  _server.on("/timeZoneData", [this]() {
     
     String part;
-    if (request->hasParam("part")) {
-      part = request->getParam("part")->value();
+    if (_server.hasArg("part")) {
+      part = _server.arg("part");
     }
-
-    Serial.print("Aufruf /timeZoneData: ");
-    Serial.println(part);
 
     // Create a JSON document
     JsonDocument doc;
@@ -628,7 +636,6 @@ void webInterface::_startServer() {
       strcat(entry, timeDifference);
       strcat(entry, ")");
 
-    //JsonObject timeZoneObj = timeZoneArray.createNestedObject();
     JsonObject timeZoneObj = timeZoneArray.add<JsonObject>();
       timeZoneObj["entry"] = entry;
     }
@@ -637,13 +644,12 @@ void webInterface::_startServer() {
     serializeJson(doc, jsonString);
 
     // Set the Content-Type header to application/json
-    request->send(200, "application/json", jsonString);
+    _server.send(200, "application/json", jsonString);
   });
 
-  _server.on("/timeZoneUpdate", HTTP_GET, [this] (AsyncWebServerRequest *request) {
-    Serial.println("/timeZoneUpdate called");
-    if (request->hasParam("value")) {
-      String newTimeZone = request->getParam("value")->value();
+  _server.on("/timeZoneUpdate", [this] () {
+    if (_server.hasArg("value")) {
+      String newTimeZone = _server.arg("value");
       int newTimeZone_i = newTimeZone.toInt();
       Serial.println("new time zone = " + newTimeZone);
 
@@ -665,16 +671,27 @@ void webInterface::_startServer() {
     } else {
       Serial.println("no time zone sent");
     }
-    request->send(200, "text/plain", "OK");
+    _server.send(200, "text/plain", "OK");
   });
 
+  _server.on("/server-time", [this]() {
+      // Erzeuge das JSON-Response
+      String jsonResponse = "{";
+      jsonResponse += "\"hour\": " + String(myESP.Hour) + ",";
+      jsonResponse += "\"minute\": " + String(myESP.Min) + ",";
+      jsonResponse += "\"second\": " + String(myESP.Sec);
+      jsonResponse += "}";
+
+      // Sende das JSON zurück an den Client
+      _server.send(200, "application/json", jsonResponse);
+  });
 
   // ====================================================================================
   // Start server
   // ====================================================================================
 
   _server.begin();  
-  Serial.println("der Server wurde gestartet");
+  Serial.println("server started");
 
 }
 
@@ -682,42 +699,45 @@ void webInterface::updateWI(int w_icon, String w_temp, String w_humi) {
   _w_icon = w_icon;
   _w_temp = w_temp;
   _w_humi = w_humi;
-
-  _ws.textAll("weather data ready");
 }
 
 String webInterface::_currentPath = "";
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// File handling example: https://github.com/G6EJD/ESP32-8266-File-Upload/blob/master/ESP_File_Download_Upload.ino
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-void webInterface::_handleUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
-  String logMessage = "";
-  String myPath = _currentPath + filename;
+void webInterface::_handleFileUpload(){ 
+  HTTPUpload& uploadfile = _server.upload();
+  
+  if(uploadfile.status == UPLOAD_FILE_START)
+  {
+    String filename_u, myPath_u;
+      
+    filename_u = uploadfile.filename;
+    myPath_u = _currentPath + filename_u;
+    Serial.print("Upload File Name: "); Serial.println(myPath_u);
 
-  if(!index){
-    logMessage = "Upload Start: " + myPath;
-    Serial.println(logMessage);
-
-    request->_tempFile = SD.open(myPath, "w");
-    if (!request->_tempFile) {
-    // Der Aufruf von SD.open() war nicht erfolgreich
-      Serial.println("Fehler: Kann Datei nicht öffnen");
-    } else {
-    // Der Aufruf von SD.open() war erfolgreich
-      Serial.printf("Datei %s erfolgreich geöffnet\n", myPath);
-    }
+    SD.remove(myPath_u);                         // Remove a previous version, otherwise data is appended the file again
+    _UploadFile = SD.open(myPath_u, FILE_WRITE);  // Open the file for writing in SPIFFS (create it, if doesn't exist)
+    if (_UploadFile!=0) Serial.println ("myPath "+myPath_u+" opened successfully");
+  }
+  else if (uploadfile.status == UPLOAD_FILE_WRITE)
+  {
+    if(_UploadFile) _UploadFile.write(uploadfile.buf, uploadfile.currentSize); // Write the received bytes to the file
   } 
-
-  if (len) {
-    // stream the incoming chunk to the opened file
-      request->_tempFile.write(data, len);
-      request->_tempFile.flush();
- //     Serial.printf("flush - index: %d\n", index);
+  else if (uploadfile.status == UPLOAD_FILE_END)
+  {
+    if(_UploadFile)          // If the file was successfully created
+    {                                    
+      _UploadFile.close();   // Close the file again
+      Serial.print("Upload Size: "); Serial.println(uploadfile.totalSize);
+      _server.send(200);
+    } 
+    else
+    {
+      _server.send(404, "text/plain", "Not Found");    
+    }
   }
-
-  if (final) {
-    logMessage = "Upload Complete: " + myPath + ",size: " + String(index + len);
-    Serial.println(logMessage); 
-    request->_tempFile.close();
-    request->redirect("/");
-  }
-}
+};
