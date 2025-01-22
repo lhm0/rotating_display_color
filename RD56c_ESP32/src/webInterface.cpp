@@ -62,6 +62,7 @@ void webInterface::begin(String ssid_) {
   imagePath = _imagePath_f.read_f();
   
   _startServer();
+
 }
 
 void webInterface::update() {

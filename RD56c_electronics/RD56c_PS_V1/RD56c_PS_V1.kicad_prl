@@ -35,7 +35,6 @@
       4,
       5,
       6,
-      7,
       8,
       9,
       10,
@@ -45,7 +44,6 @@
       14,
       15,
       16,
-      17,
       18,
       19,
       20,
@@ -69,6 +67,12 @@
     ],
     "visible_layers": "fffffff_ffffffff",
     "zone_display_mode": 0
+  },
+  "git": {
+    "repo_password": "",
+    "repo_type": "",
+    "repo_username": "",
+    "ssh_key": ""
   },
   "meta": {
     "filename": "RD56c_PS_V1.kicad_prl",
