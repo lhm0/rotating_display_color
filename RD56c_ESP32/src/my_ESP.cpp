@@ -60,7 +60,7 @@ void my_ESP::_iniWifi() {
     try to connect to WiFi, if ssid and password are valid
   */
   if ((_ssid!="")|(_password!="")) { 
-    WiFi.begin(_ssid, _password);
+    WiFi.begin(_ssid.c_str(), _password.c_str());
 
     Serial.print("connecting to WiFi ...");
 
@@ -90,7 +90,7 @@ void my_ESP::_iniWifi() {
     WiFi.softAPConfig(apIP, apIP, subnet);  //
 
     ssid = "RD56c";
-    WiFi.softAP(ssid);                      //
+    WiFi.softAP(ssid.c_str()); 
 
     ipAddress = WiFi.softAPIP().toString();
 
